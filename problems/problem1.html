@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>CPSC 487/587</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.3.0/math.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quaternion@1.5.1/quaternion.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric-1.2.6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import {ThreeEngine} from "../js/utils/utils_three.js";
+    import {get_default_lil_gui, refresh_displays} from "../../js/utils/utils_three.js";
+    import {identity_matrix, add_matrix_matrix, sub_matrix_matrix, mul_matrix_scalar, mul_matrix_matrix, frobenius_norm_matrix, transpose} from "../../js/utils/utils_math.js";
+
+    // todo: create a visualization that demonstrates your knowledge of displacement-based
+    // todo: distance over SE(3).  Note that this will use your logarithm solution from PS_U3,
+    // todo: so you must finish that prior to starting this problem.
+    // todo: Feel free to make this visualization as creative as you want, or, conversely,
+    // todo: feel free to create a visualization like the one here
+    // todo: https://yale-cpsc-487-587-internal-djrakita-c95fa6c3239a481a48d29a6b0fd.gitlab.io/html/visualizations/SE2_distance2.html
+    // todo: though applied to 3D rotations + translations instead of 2D rotations + translations.
+    // todo: Feel free to use the 3x3 matrix inverse function provided by me below if you want.
+
+    // Initialization: engine, gui, settings, actions
+
+    let engine = ThreeEngine.new_default_3d();
+
+    let settings = {
+        theta_a_1: 0,
+        theta_b_1: 0,
+        theta_c_1: 0,
+        tx_1: 0,
+        ty_1: 0,
+        tz_1: 0,
+
+        theta_a_2: 0,
+        theta_b_2: 0,
+        theta_c_2: 0,
+        tx_2: 0,
+        ty_2: 0,
+        tz_2: 0,
+
+        distance: 0
+    }
+
+    let actions = {
+        reset1: () => {
+            settings.theta_a_1 = 0;
+            settings.theta_b_1 = 0;
+            settings.theta_c_1 = 0;
+            settings. tx_1 = 0;
+            settings. ty_1 = 0;
+            settings. tz_1 = 0;
+            refresh_displays(gui);
+        },
+        reset2: () => {
+            settings.theta_a_2 = 0;
+            settings.theta_b_2 = 0;
+            settings.theta_c_2 = 0;
+            settings. tx_2 = 0;
+            settings. ty_2 = 0;
+            settings. tz_2 = 0;
+            refresh_displays(gui);
+        }
+    }
+
+    let gui = get_default_lil_gui();
+
+    let folder_1 = gui.addFolder('SE3 1');
+
+    folder_1.add(settings, 'theta_a_1', -6.28, 6.28).name('Theta_a_1');
+    folder_1.add(settings, 'theta_b_1', -6.28, 6.28).name('Theta_b_1');
+    folder_1.add(settings, 'theta_c_1', -6.28, 6.28).name('Theta_c_1');
+    folder_1.add(settings, 'tx_1', -2, 2).name('tx1');
+    folder_1.add(settings, 'ty_1', -2, 2).name('ty1');
+    folder_1.add(settings, 'tz_1', -2, 2).name('tz1');
+    folder_1.add(actions, 'reset1');
+
+    let folder_2 = gui.addFolder('SE3 2');
+
+    folder_2.add(settings, 'theta_a_2', -6.28, 6.28).name('Theta_a_2');
+    folder_2.add(settings, 'theta_b_2', -6.28, 6.28).name('Theta_b_2');
+    folder_2.add(settings, 'theta_c_2', -6.28, 6.28).name('Theta_c_2');
+    folder_2.add(settings, 'tx_2', -2, 2).name('tx2');
+    folder_2.add(settings, 'ty_2', -2, 2).name('ty2');
+    folder_2.add(settings, 'tz_2', -2, 2).name('tz2');
+    folder_2.add(actions, 'reset2');
+
+    let folder_3 = gui.addFolder('Distance');
+
+    gui.add(settings, 'distance').name('disp based dis').disable();
+
+    // Calculations
+
+    let x = [[1],[0],[0]];
+    let y = [[0],[1],[0]];
+    let z = [[0],[0],[1]];
+
+    // A must be a 3x3 matrix in row major order
+    // [[a11, a12, a13], [a21, a22, a23], [a31, a32, a33]]
+
+    function matrix_inverse_3x3(A) {
+        let det = A[0][0] * (A[1][1] * A[2][2] - A[2][1] * A[1][2]) -
+            A[0][1] * (A[1][0] * A[2][2] - A[1][2] * A[2][0]) +
+            A[0][2] * (A[1][0] * A[2][1] - A[1][1] * A[2][0]);
+
+        if (det === 0) {
+            return null; // No inverse exists if determinant is 0
+        }
+
+        let cofactors = [
+            [
+                (A[1][1] * A[2][2] - A[2][1] * A[1][2]),
+                -(A[1][0] * A[2][2] - A[1][2] * A[2][0]),
+                (A[1][0] * A[2][1] - A[2][0] * A[1][1])
+            ],
+            [
+                -(A[0][1] * A[2][2] - A[0][2] * A[2][1]),
+                (A[0][0] * A[2][2] - A[0][2] * A[2][0]),
+                -(A[0][0] * A[2][1] - A[2][0] * A[0][1])
+            ],
+            [
+                (A[0][1] * A[1][2] - A[0][2] * A[1][1]),
+                -(A[0][0] * A[1][2] - A[1][0] * A[0][2]),
+                (A[0][0] * A[1][1] - A[1][0] * A[0][1])
+            ]
+        ];
+
+        let adjugate = [
+            [cofactors[0][0] / det, cofactors[1][0] / det, cofactors[2][0] / det],
+            [cofactors[0][1] / det, cofactors[1][1] / det, cofactors[2][1] / det],
+            [cofactors[0][2] / det, cofactors[1][2] / det, cofactors[2][2] / det]
+        ];
+
+        return adjugate;
+    }
+
+    function so3_x_axis_rotation(theta) {
+        return [[1, 0, 0], [0, Math.cos(theta), -Math.sin(theta)], [0, Math.sin(theta), Math.cos(theta)]];
+    }
+    
+    function so3_y_axis_rotation(theta) {
+        return [[Math.cos(theta), 0, Math.sin(theta)], [0, 1, 0], [-Math.sin(theta), 0, Math.cos(theta)]];
+    }
+    
+    function so3_z_axis_rotation(theta) {
+        return [[Math.cos(theta), -Math.sin(theta), 0], [Math.sin(theta), Math.cos(theta), 0], [0,0,1]];
+    }
+
+    function ln_map_SE3_se3(SE3_mat) {
+        // Extract SO3 Matrix
+        let SO3_mat = [
+            [SE3_mat[0][0], SE3_mat[0][1], SE3_mat[0][2]],
+            [SE3_mat[1][0], SE3_mat[1][1], SE3_mat[1][2]],
+            [SE3_mat[2][0], SE3_mat[2][1], SE3_mat[2][2]]
+        ];
+    
+        // Extract Translation Vector
+        let t = [ [SE3_mat[0][3]], [SE3_mat[1][3]], [SE3_mat[2][3]] ];
+    
+        // Compute the logarithm of SO3
+        let trace = SO3_mat[0][0] + SO3_mat[1][1] + SO3_mat[2][2];
+        let beta = Math.acos((trace - 1) / 2);
+        let diff = sub_matrix_matrix(SO3_mat, transpose(SO3_mat));
+        let so3_mat;
+    
+        if (Math.abs(beta) < 0.0001) {
+            let num = 0.5 + Math.pow(beta, 2) / 12 + 7 * Math.pow(beta, 4) / 720;
+            so3_mat = mul_matrix_scalar(diff, num);
+        } else if (beta === Math.PI) {
+            so3_mat = [[0, -Math.PI * Math.sqrt(0.5 * (SO3_mat[2][2] + 1)), Math.PI * Math.sqrt(0.5 * (SO3_mat[1][1] + 1))],
+                       [Math.PI * Math.sqrt(0.5 * (SO3_mat[2][2] + 1)), 0, -Math.PI * Math.sqrt(0.5 * (SO3_mat[0][0] + 1))],
+                       [-Math.PI * Math.sqrt(0.5 * (SO3_mat[1][1] + 1)), Math.PI * Math.sqrt(0.5 * (SO3_mat[0][0] + 1)), 0]];
+        } else {
+            let num = beta / (2 * Math.sin(beta));
+            so3_mat = mul_matrix_scalar(diff, num);
+        }
+    
+        // Compute C and C-inverse
+        let beta_norm = frobenius_norm_matrix([so3_mat[2][1], so3_mat[0][2], so3_mat[1][0]]);
+        let p, q;
+        if (Math.abs(beta_norm) < 0.0001) {
+            p = 0.5 - (Math.pow(beta_norm, 2) / 24) + (Math.pow(beta_norm, 4) / 720);
+            q = (1 / 6) - (Math.pow(beta_norm, 2) / 120) + (Math.pow(beta_norm, 4) / 5040);
+        } else {
+            p = (1 - Math.cos(beta_norm)) / Math.pow(beta_norm, 2);
+            q = (beta_norm - Math.sin(beta_norm)) / Math.pow(beta_norm, 3);
+        }
+        let C = identity_matrix(3);
+        C = add_matrix_matrix(C, mul_matrix_scalar(so3_mat, p));
+        C = add_matrix_matrix(C, mul_matrix_scalar(mul_matrix_matrix(so3_mat, so3_mat), q));
+        let C_inv = matrix_inverse_3x3(C);
+    
+        // Transform the translation vector
+        let v = mul_matrix_matrix(C_inv, t);
+    
+        // the final se3 matrix
+        return [
+            [so3_mat[0][0], so3_mat[0][1], so3_mat[0][2], v[0][0]],
+            [so3_mat[1][0], so3_mat[1][1], so3_mat[1][2], v[1][0]],
+            [so3_mat[2][0], so3_mat[2][1], so3_mat[2][2], v[2][0]],
+            [0, 0, 0, 0]
+        ];
+    }
+    
+    function SE3_distance(m1, m2, t1, t2){
+        let m1_t = transpose(m1);
+        let t1_t = mul_matrix_matrix(mul_matrix_scalar(m1_t, -1), t1);
+        let m = mul_matrix_matrix(m1_t, m2);
+        let t = add_matrix_matrix(mul_matrix_matrix(m1_t, t2), t1_t);
+
+        let SE3_matrix = [
+        [m[0][0], m[0][1], m[0][2], t[0]],
+        [m[1][0], m[1][1], m[1][2], t[1]],
+        [m[2][0], m[2][1], m[2][2], t[2]],
+        [0, 0, 0, 1]
+        ];
+        let se3 = ln_map_SE3_se3(SE3_matrix);
+        let vee = [se3[2][1], se3[0][2], se3[1][0], se3[0][3], se3[1][3], se3[2][3]];
+        let dis = Math.sqrt(vee.reduce((acc, val) => acc + val * val, 0));
+
+        return dis;
+    }
+
+    engine.animation_loop(function() {
+        // 1
+        let r_x_1 = so3_x_axis_rotation(settings.theta_a_1);
+        let r_y_1 = so3_y_axis_rotation(settings.theta_b_1);
+        let r_z_1 = so3_z_axis_rotation(settings.theta_c_1);
+
+        let R1 = mul_matrix_matrix(mul_matrix_matrix(r_x_1, r_y_1), r_z_1);
+
+        let x1 = add_matrix_matrix(mul_matrix_matrix(R1, x), [settings.tx_1,settings.ty_1,settings.tz_1]);
+        let y1 = add_matrix_matrix(mul_matrix_matrix(R1, y), [settings.tx_1,settings.ty_1,settings.tz_1]); 
+        let z1 = add_matrix_matrix(mul_matrix_matrix(R1, z), [settings.tx_1,settings.ty_1,settings.tz_1]); 
+    
+        engine.draw_debug_vector([settings.tx_1, settings.ty_1, settings.tz_1], x1, 0.03, undefined, 0xff0000);
+        engine.draw_debug_vector([settings.tx_1, settings.ty_1, settings.tz_1], y1, 0.03, undefined, 0x00ff00);
+        engine.draw_debug_vector([settings.tx_1, settings.ty_1, settings.tz_1], z1, 0.03, undefined, 0x0000ff);
+
+        // 2
+        let r_x_2 = so3_x_axis_rotation(settings.theta_a_2);
+        let r_y_2 = so3_y_axis_rotation(settings.theta_b_2);
+        let r_z_2 = so3_z_axis_rotation(settings.theta_c_2);
+
+        let R2 = mul_matrix_matrix(mul_matrix_matrix(r_x_2, r_y_2), r_z_2);
+
+        let x2 = add_matrix_matrix(mul_matrix_matrix(R2, x), [settings.tx_2,settings.ty_2,settings.tz_2]);
+        let y2 = add_matrix_matrix(mul_matrix_matrix(R2, y), [settings.tx_2,settings.ty_2,settings.tz_2]); 
+        let z2 = add_matrix_matrix(mul_matrix_matrix(R2, z), [settings.tx_2,settings.ty_2,settings.tz_2]); 
+
+        engine.draw_debug_vector([settings.tx_2, settings.ty_2, settings.tz_2], x2, 0.03, undefined, 0xaa4444);
+        engine.draw_debug_vector([settings.tx_2, settings.ty_2, settings.tz_2], y2, 0.03, undefined, 0x44aa44);
+        engine.draw_debug_vector([settings.tx_2, settings.ty_2, settings.tz_2], z2, 0.03, undefined, 0x4444aa);
+
+        let t1 = [[settings.tx_1], [settings.ty_1], [settings.tz_1]];
+        let t2 = [[settings.tx_2], [settings.ty_2], [settings.tz_2]];
+
+        let dis = SE3_distance(R1, R2, t1, t2)
+
+        settings.distance = dis;
+
+        refresh_displays(gui);
+    });
+
+</script>
+</body>
+</html>

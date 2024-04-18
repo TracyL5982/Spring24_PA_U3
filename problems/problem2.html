@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>CPSC 487/587</title>
+    <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lil-gui@0.19.1/dist/lil-gui.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/10.3.0/math.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/quaternion@1.5.1/quaternion.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/numeric@1.2.6/numeric-1.2.6.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stats.js@0.17.0/build/stats.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+              "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+              "three/": "https://unpkg.com/three@0.160.0/"
+            }
+        }
+    </script>
+</head>
+<body>
+<script type="module">
+    import {ThreeEngine} from "../../js/utils/utils_three.js";
+    import {get_default_lil_gui, refresh_displays} from "../js/utils/utils_three.js";
+    import {cross_product, add_matrix_matrix, frobenius_norm_matrix, mul_matrix_scalar, unroll_matrix_to_list} from "../../js/utils/utils_math.js";
+    // todo: create a visualization that demonstrates your knowledge of quaternions.  This is intentionally
+    // todo: open-ended.  Be as creative as you want, or feel free to recreate any of the visualizations
+    // todo: found in Section 3.3.
+
+    let engine = ThreeEngine.new_default_3d();
+
+    engine.add_suzanne_monkey_as_mesh_object(0x00eeff);
+    engine.toggle_mesh_object_wireframe_visibility(0);
+    engine.toggle_mesh_object_visibility(0);
+
+
+    let settings = {
+        theta: 0,
+        phi: 0,
+        r: 1,
+        t: 0
+    }
+
+    let actions = {
+        reset: () => {
+            settings.theta = 0;
+            settings.phi = 0;
+            settings.r = 1;
+            settings.t = 0;
+            refresh_displays(gui);
+        }
+    }
+
+    let gui = get_default_lil_gui();
+    gui.add(settings, 'theta', -3.14, 3.14);
+    gui.add(settings, 'phi', -3.14, 3.14);
+    gui.add(settings, 'r', -6.28, 6.28);
+    gui.add(settings, 't', 0, 1);
+    gui.add(actions, 'reset');
+
+    let verts = engine.get_local_vertex_positions_of_mesh_object_wireframe(0);   
+
+    function exp_map_h1_H1(q) {
+        
+        //if ||\mathbf{v}|| = 0
+        //   (1 + 0i + 0j + 0k)
+        //else  
+        //   cos(||\mathbf{v}||) +\frac{sin(||\mathbf{v}||)}{||\mathbf{v}||}\mathbf{v}
+
+        let v = [[q[1]], [q[2]], [q[3]]];
+        let v_norm = frobenius_norm_matrix(v);
+
+        if(v_norm === 0){
+            return [1, 0, 0, 0];
+        }
+        else{
+            let new_w = Math.cos(v_norm);
+            let new_v = mul_matrix_scalar(v, Math.sin(v_norm)/v_norm);
+            let new_v_list = unroll_matrix_to_list(new_v);
+            return [new_w, new_v_list[0], new_v_list[1], new_v_list[2]];
+        }
+    }
+
+    function quaternion_multiplication (q1, q2) {
+        let w1 = q1[0];
+        let w2 = q2[0];
+        let v1 = [q1[1], q1[2], q1[3]];
+        let v2 = [q2[1], q2[2], q2[3]];
+
+        let xyz_sum = v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
+        let new_w = w1*w2 - xyz_sum;
+
+        //q_1q_2 = (w_1w_2 - x_1x_2 - y_1y_2 - z_1z_2) 
+        //+ (w_1x_2 + x_1w_2 + y_1z_2 - z_1y_2)i 
+        //+ (w_1y_2 - x_1z_2 + y_1w_2 + z_1x_2)j 
+        //+ (w_1z_2 + x_1y_2 - y_1x_2 + z_1w_2)k
+
+        let a = mul_matrix_scalar(v1, w2);
+        let b = mul_matrix_scalar(v2, w1);
+        let c = cross_product(v1, v2);
+
+        let new_v = add_matrix_matrix(add_matrix_matrix(a, b), c);
+        let new_v_list = unroll_matrix_to_list(new_v);
+        return [new_w, new_v_list[0], new_v_list[1], new_v_list[2]];
+    }
+
+
+    function quaternion_conjugate (q) {
+        return [q[0], -q[1], -q[2], -q[3]];
+    }
+    
+    function sandwich_product_qvq (q, vert) {
+        let vert_list = unroll_matrix_to_list(vert);
+        let new_vert = [0, vert_list[0], vert_list[1], vert_list[2]];
+        let res= quaternion_multiplication(quaternion_multiplication(q, new_vert), quaternion_conjugate(q));
+        return [[res[1]], [res[2]], [res[3]]];
+    }
+
+    engine.animation_loop(function() {
+
+        let x = settings.r * Math.sin(settings.phi) * Math.cos(settings.theta);
+        let y = settings.r * Math.sin(settings.phi) * Math.sin(settings.theta);
+        let z = settings.r * Math.cos(settings.phi);
+
+        engine.draw_debug_vector([0,0,0], [x,y,z], 0.03, undefined, 0x00ffff);
+
+        let i = (settings.r * settings.t) * Math.sin(settings.phi) * Math.cos(settings.theta);
+        let j = (settings.r * settings.t) * Math.sin(settings.phi) * Math.sin(settings.theta);
+        let k = (settings.r * settings.t) * Math.cos(settings.phi);
+
+        let q = [0, i, j, k];
+        let exp = exp_map_h1_H1(q);
+
+        let new_verts = []
+        verts.forEach(vert => {
+            new_verts.push(sandwich_product_qvq(exp, vert));
+        });
+
+        engine.update_vertex_positions_of_mesh_object_wireframe(0, new_verts);
+    });
+
+</script>
+</body>
+</html>
