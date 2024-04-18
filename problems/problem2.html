@@ -20,9 +20,9 @@
 </head>
 <body>
 <script type="module">
-    import {ThreeEngine} from "../../js/utils/utils_three.js";
+    import {ThreeEngine} from "../js/utils/utils_three.js";
     import {get_default_lil_gui, refresh_displays} from "../js/utils/utils_three.js";
-    import {cross_product, add_matrix_matrix, frobenius_norm_matrix, mul_matrix_scalar, unroll_matrix_to_list} from "../../js/utils/utils_math.js";
+    import {cross_product, add_matrix_matrix, frobenius_norm_matrix, mul_matrix_scalar, unroll_matrix_to_list} from "../js/utils/utils_math.js";
     // todo: create a visualization that demonstrates your knowledge of quaternions.  This is intentionally
     // todo: open-ended.  Be as creative as you want, or feel free to recreate any of the visualizations
     // todo: found in Section 3.3.
@@ -61,7 +61,7 @@
     let verts = engine.get_local_vertex_positions_of_mesh_object_wireframe(0);   
 
     function exp_map_h1_H1(q) {
-        
+
         //if ||\mathbf{v}|| = 0
         //   (1 + 0i + 0j + 0k)
         //else  
